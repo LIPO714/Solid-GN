@@ -116,14 +116,17 @@ class FGNS(nn.Module):
         vector_v_y = (v[:, :, 1] - metadata['vel_mean'][1]) / metadata['vel_std'][1]
         vels = torch.cat([scalar_v_x.reshape(-1, time_step), vector_v_y.reshape(-1, time_step)], dim=1)
 
+        # Calculate particle velocity ｜v｜
         v_value = torch.norm(v, dim=2)
         v_value = (v_value - metadata['V_mean']) / metadata['V_std']
         v_value = v_value.reshape(-1, time_step)
 
-        dir_v_x_change = self.direct_v_x_change(v[:, :, 0])
+        dir_v_x_change = self.direct_v_x_change(v[:, :, 0])  # The length is 0 and currently has no effect
 
+        # particle type t
         type_emb = self.particle_type_emb(self.particle_type)
 
+        # Calculate the distance from the wall
         last_step_poss = self.poss[:, -1]
         dist_to_walls = torch.cat(
             [last_step_poss - metadata['out_bounds'][:, 0],
@@ -136,6 +139,7 @@ class FGNS(nn.Module):
         dist_to_walls_x = self.change_dist_to_walls(dist_to_walls_x, dist_to_walls_x_op, direct_v_x)
         dist_to_walls = torch.cat([dist_to_walls_x, dist_to_walls_y], dim=1)
 
+        # particle radius r
         particle_r = self.particle_r.reshape(-1, 1)
         particle_r_2 = particle_r ** 2
 
@@ -182,6 +186,7 @@ class FGNS(nn.Module):
         non_self_edge_num = self.edge_num - self.kinematic_num
 
         v = self.vels[:, -1]
+        # Decomposition vel direction
         normal_senders_cos, tangential_senders_sin = utils.vel_decomposition(
             v[self.senders[:non_self_edge_num]], dist_vec[:non_self_edge_num])
         normal_receivers_cos, tangential_receivers_sin = utils.vel_decomposition(
@@ -192,12 +197,13 @@ class FGNS(nn.Module):
 
         senders_r = self.particle_r[self.senders]
         receivers_r = self.particle_r[self.receivers]
-        dist_without_r = dist - senders_r - receivers_r
-        theta = dist_without_r / dist
+        h = dist - senders_r - receivers_r
+        theta = h / dist
         theta[torch.isnan(theta)] = 0
         theta[torch.isinf(theta)] = 0
         dist_without_r_vec = theta.unsqueeze(1) * dist_vec
 
+        # edge type T
         senders_type = self.particle_type[self.senders]
         receivers_type = self.particle_type[self.receivers]
         senders_type, receivers_type = self.change_r_s(senders_type, receivers_type)
@@ -208,19 +214,21 @@ class FGNS(nn.Module):
 
         tangential_msg = torch.cat([tangential_senders_sin.reshape(-1, 1), tangential_receivers_sin.reshape(-1, 1)], dim=1)
 
-        direction_type_x = self.get_direction_type(direct_dist_x, direct_v_x)
+        # generate sym direction encoding
+        direction_encoding = self.get_direction_encoding(direct_dist_x, direct_v_x)
 
         dist = dist.reshape(-1, 1)
-        dist_without_r = dist_without_r.reshape(-1, 1)
-        input = torch.cat([dist_vec, dist, dist_without_r_vec, dist_without_r, edge_type_emb, direction_type_x], dim=1)
+        h = h.reshape(-1, 1)
+        input = torch.cat([dist_vec, dist, dist_without_r_vec, h, edge_type_emb, direction_encoding], dim=1)
 
+        # Generate three directional features
         normal_edge = self.normal_edge_encoder(torch.cat([input[:non_self_edge_num], normal_msg], dim=1))
         tangential_edge = self.tangential_edge_encoder(torch.cat([input[:non_self_edge_num], tangential_msg], dim=1))
         damping_edge = self.damping_edge_encoder(input[non_self_edge_num:])
 
         return normal_edge, tangential_edge, damping_edge
 
-    def get_direction_type(self, direct_dist, direct_v):
+    def get_direction_encoding(self, direct_dist, direct_v):
         direct_v_s = direct_v[self.senders]
         direct_v_r = direct_v[self.receivers]
 
@@ -229,9 +237,9 @@ class FGNS(nn.Module):
         direct_v_r += 1
 
         direction_type = torch.abs((self.direction_type_num - 1) - (direct_dist * 9 + direct_v_s * 3 + direct_v_r * 1))
-        direction_type = self.edge_direction_emb(direction_type)
+        direction_encoding = self.edge_direction_emb(direction_type)
 
-        return direction_type
+        return direction_encoding
 
     def change_r_s(self, s, r):
         mask = r < s

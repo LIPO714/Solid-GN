@@ -24,8 +24,8 @@ def arg_parse():
     parser.add_argument('--ckpt', type=str, help='', default=None)
     parser.add_argument('--data-dir', type=str)
     parser.add_argument('--dataset-name', type=str, default="Slide_Plus", help='dataset name')
-    parser.add_argument('--pred-all', type=lambda x:bool(distutils.util.strtobool(x)), default=True)
-    parser.add_argument('--output-gif', type=lambda x: bool(distutils.util.strtobool(x)), default=False)
+    parser.add_argument('--pred-all', type=lambda x:bool(distutils.util.strtobool(x)), default=True)  # True: rollout prediction, False: one-step prediction
+    parser.add_argument('--output-fig', type=lambda x: bool(distutils.util.strtobool(x)), default=False)  # True: output figure
     parser.add_argument('--show-loss-max', type=lambda x:bool(distutils.util.strtobool(x)), default=False)
     parser.add_argument('--loss-max-num', type=int, default=50)
     return parser.parse_args()
@@ -85,7 +85,7 @@ def main():
         model=model,
         output_dir=output_dir,
         exp_name=exp_name,
-        output_gif=args.output_gif,
+        output_fig=args.output_fig,
         if_sort=args.show_loss_max,
         loss_max_num=args.loss_max_num,
         dataset=args.dataset_name,

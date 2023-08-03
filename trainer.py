@@ -75,8 +75,8 @@ class Trainer(object):
             num_rollouts = tgt_vels.shape[1]  # 1
             outputs = self.model(poss, vels, particle_r, particle_type, nonk_mask, self.metadata, tgt_poss, tgt_vels,
                                  num_rollouts=num_rollouts)
-            # poss_overturn, vels_overturn, particle_type_overturn, nonk_mask_overturn, tgt_poss_overturn, tgt_vels_overturn = self.overturn(poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts=num_rollouts)
-            # outputs_overturn = self.model(poss_overturn, vels_overturn, particle_r, particle_type_overturn, nonk_mask_overturn, self.metadata, tgt_poss_overturn, tgt_vels_overturn, num_rollouts=num_rollouts)
+            # poss_flip, vels_flip, particle_type_flip, nonk_mask_flip, tgt_poss_flip, tgt_vels_flip = self.flip(poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts=num_rollouts)
+            # outputs_flip = self.model(poss_flip, vels_flip, particle_r, particle_type_flip, nonk_mask_flip, self.metadata, tgt_poss_flip, tgt_vels_flip, num_rollouts=num_rollouts)
 
             # poss_move, vels_move, particle_type_move, nonk_mask_move, tgt_poss_move, tgt_vels_move, metadata_move = self.move(10, poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels)
             # outputs_move = self.model(poss_move, vels_move, particle_r, particle_type_move, nonk_mask_move, metadata_move, tgt_poss_move, tgt_vels_move, num_rollouts=num_rollouts)
@@ -262,18 +262,20 @@ class Trainer(object):
         for param_group in self.optim.param_groups:
             param_group['lr'] = lr
 
-    def overturn(self, poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts):
-        poss_overturn = poss
-        poss_overturn[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - poss_overturn[:,:,0]
-        vels_overturn = vels
-        vels_overturn[:,:,0] = -1 * vels_overturn[:,:,0]
-        tgt_poss_overturn = tgt_poss
-        tgt_poss_overturn[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - tgt_poss_overturn[:,:,0]
-        tgt_vels_overturn = tgt_vels
-        tgt_vels_overturn[:,:,0] = -1 * tgt_vels_overturn[:,:, 0]
-        return poss_overturn, vels_overturn, particle_type, nonk_mask, tgt_poss_overturn, tgt_vels_overturn
+    def flip(self, poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts):
+        '''Overall system flip'''
+        poss_flip = poss
+        poss_flip[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - poss_flip[:,:,0]
+        vels_flip = vels
+        vels_flip[:,:,0] = -1 * vels_flip[:,:,0]
+        tgt_poss_flip = tgt_poss
+        tgt_poss_flip[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - tgt_poss_flip[:,:,0]
+        tgt_vels_flip = tgt_vels
+        tgt_vels_flip[:,:,0] = -1 * tgt_vels_flip[:,:, 0]
+        return poss_flip, vels_flip, particle_type, nonk_mask, tgt_poss_flip, tgt_vels_flip
 
     def move(self, move_distance, poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels):
+        '''Overall system translation'''
         poss[:,:,0] = poss[:,:,0] + move_distance
         tgt_poss[:,:,0] = tgt_poss[:,:,0] + move_distance
         metadata_move = self.metadata

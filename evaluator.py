@@ -20,7 +20,7 @@ import utils
 
 
 class PredEvaluator(object):
-    def __init__(self, device, data_loader, model, output_dir, exp_name, output_gif=False, if_sort=False, checkpoint=None,
+    def __init__(self, device, data_loader, model, output_dir, exp_name, output_fig=False, if_sort=False, checkpoint=None,
                  loss_max_num=100, dataset="Crash", pred_all=True):
         self.device = device
         self.output_dir = output_dir
@@ -28,7 +28,7 @@ class PredEvaluator(object):
         self.model = model
         self.if_sort = if_sort
         self.loss_max_num = loss_max_num
-        self.output_gif = output_gif
+        self.output_fig = output_fig
         self.dataset = dataset
         self.pred_all = pred_all
         self.exp_name = exp_name
@@ -42,7 +42,7 @@ class PredEvaluator(object):
         loss_num = 0
         loss_sum = 0
         acc_loss_sum = 0
-        overturn_loss_sum = 0
+        flip_loss_sum = 0
 
         start_dt = time.time()
         print("start_datetime:", start_dt)
@@ -58,7 +58,7 @@ class PredEvaluator(object):
 
             with torch.no_grad():
                 num_rollouts = tgt_poss.shape[1]
-                poss_overturn, vels_overturn, particle_type_overturn, nonk_mask_overturn, tgt_poss_overturn, tgt_vels_overturn = self.overturn(
+                poss_flip, vels_flip, particle_type_flip, nonk_mask_flip, tgt_poss_flip, tgt_vels_flip = self.flip(
                     poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts=num_rollouts)
 
                 outputs = self.model(poss, vels, particle_r, particle_type, nonk_mask, self.metadata, tgt_poss,
@@ -92,20 +92,26 @@ class PredEvaluator(object):
                     loss_steps_sum = loss_steps_sum + loss_steps
                     acc_loss_steps_sum = acc_loss_steps_sum + acc_loss_steps
 
-                outputs_overturn = self.model(poss_overturn, vels_overturn, particle_r, particle_type_overturn, nonk_mask_overturn, self.metadata, tgt_poss_overturn, tgt_vels_overturn, num_rollouts=num_rollouts)
+                outputs_flip = self.model(poss_flip, vels_flip, particle_r, particle_type_flip, nonk_mask_flip, self.metadata, tgt_poss_flip, tgt_vels_flip, num_rollouts=num_rollouts)
 
-                overturn_loss, overturn_loss_step = self.overturn_loss(outputs, outputs_overturn, nonk_mask)
-                overturn_loss_sum += overturn_loss
+                flip_loss, flip_loss_step = self.flip_loss(outputs, outputs_flip, nonk_mask)
+                flip_loss_sum += flip_loss
                 if loss_num == 1:
-                    overturn_loss_step_sum = overturn_loss_step
+                    flip_loss_step_sum = flip_loss_step
                 else:
-                    overturn_loss_step_sum += overturn_loss_step
+                    flip_loss_step_sum += flip_loss_step
 
-                print('overturn loss mean:', overturn_loss_sum / loss_num)
+                print('flip loss mean:', flip_loss_sum / loss_num)
 
-                if self.output_gif:
-                    self.overturn_process_2D(tgt_poss, tgt_poss_overturn, outputs, outputs_overturn, nonk_mask, particle_type, particle_r,
-                                    batch_idx)
+                if self.output_fig:
+                    # 1:output figures:
+                    self.process_2D(tgt_poss, outputs, nonk_mask, particle_type, particle_r, batch_idx)
+                    # 2:output flip figures:
+                    # self.flip_process_2D(tgt_poss, tgt_poss_flip, outputs, outputs_flip, nonk_mask, particle_type, particle_r,
+                    #                 batch_idx)
+                    # 3:output gifs
+                    # if self.dataset == "Small_Slide_Same_R" or self.dataset == "Small_Slide":
+                    #     self.gif_2D(tgt_poss, outputs, nonk_mask, particle_type, particle_r, batch_idx)
 
         end_dt = time.time()
         print("end_datetime:", end_dt)
@@ -113,41 +119,42 @@ class PredEvaluator(object):
 
         loss_mean = loss_sum / loss_num
         acc_loss_mean = acc_loss_sum / loss_num
-        overturn_loss_mean = overturn_loss_sum / loss_num
+        flip_loss_mean = flip_loss_sum / loss_num
         loss_step_mean = loss_steps_sum / loss_num
         acc_loss_step_mean = acc_loss_steps_sum / loss_num
-        overturn_loss_step_mean = overturn_loss_step_sum / loss_num
+        flip_loss_step_mean = flip_loss_step_sum / loss_num
 
         print('loss mean:', loss_mean)
         print('acc loss mean:', acc_loss_mean)
-        print('overturn loss mean:', overturn_loss_mean)
+        print('flip loss mean:', flip_loss_mean)
         print('loss step mean:', loss_step_mean)
         print('acc loss step mean:', acc_loss_step_mean)
-        print('overturn loss step mean:', overturn_loss_step_mean)
+        print('flip loss step mean:', flip_loss_step_mean)
 
         if num_rollouts > 1:
-            utils.rollout_record_data(self.exp_name, loss_mean, acc_loss_mean, overturn_loss_mean, loss_step_mean,
-                                      acc_loss_step_mean, overturn_loss_step_mean)
+            utils.rollout_record_data(self.exp_name, loss_mean, acc_loss_mean, flip_loss_mean, loss_step_mean,
+                                      acc_loss_step_mean, flip_loss_step_mean)
         else:
-            utils.onestep_record_data(self.exp_name, loss_mean, acc_loss_mean, overturn_loss_mean)
+            utils.onestep_record_data(self.exp_name, loss_mean, acc_loss_mean, flip_loss_mean)
 
     def round(self, n, poss, vels):
         poss = torch.round(poss * (10 ** n)) / 10**n
         vels = torch.round(vels * (10 ** n)) / 10 ** n
         return poss, vels
 
-    def overturn_loss(self, outputs, overturn_outputs, weighting):
-        overturn_poss = overturn_outputs['pred_poss']
-        overturn_poss = self.overturn_poss(overturn_poss)
-        overturn_loss = ((overturn_poss - outputs['pred_poss']) * torch.unsqueeze(torch.unsqueeze(weighting, -1), 1)) ** 2
-        overturn_loss_step = overturn_loss.sum(dim=2).sum(dim=0) / torch.sum(weighting)
-        overturn_loss = overturn_loss.mean(1).sum() / torch.sum(weighting)
-        return overturn_loss.item(), overturn_loss_step
+    def flip_loss(self, outputs, flip_outputs, weighting):
+        '''Sym_Mse'''
+        flip_poss = flip_outputs['pred_poss']
+        flip_poss = self.flip_poss(flip_poss)
+        flip_loss = ((flip_poss - outputs['pred_poss']) * torch.unsqueeze(torch.unsqueeze(weighting, -1), 1)) ** 2
+        flip_loss_step = flip_loss.sum(dim=2).sum(dim=0) / torch.sum(weighting)
+        flip_loss = flip_loss.mean(1).sum() / torch.sum(weighting)
+        return flip_loss.item(), flip_loss_step
 
-    def overturn_poss(self, poss):
-        overturn_poss = copy.deepcopy(poss)
-        overturn_poss[:, :, 0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - overturn_poss[:, :, 0]
-        return overturn_poss
+    def flip_poss(self, poss):
+        flip_poss = copy.deepcopy(poss)
+        flip_poss[:, :, 0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - flip_poss[:, :, 0]
+        return flip_poss
 
     def loss(self, outputs, labels, weighting):
         loss = ((outputs['pred_poss'] - labels['poss']) * torch.unsqueeze(torch.unsqueeze(weighting, -1), 1)) ** 2
@@ -324,13 +331,13 @@ class PredEvaluator(object):
             plt.close(fig)
             plt.close()
 
-    def overturn_process_2D(self, tgt_pos_seq, tgt_poss_overturn, outputs, outputs_overturn, nonk_mask, particle_type, particle_r, batch_idx):
+    def flip_process_2D(self, tgt_pos_seq, tgt_poss_flip, outputs, outputs_flip, nonk_mask, particle_type, particle_r, batch_idx):
         particle_r = particle_r.detach().cpu().numpy()
 
         tgt_pos_seq = tgt_pos_seq.cpu().numpy()
-        tgt_poss_overturn = tgt_poss_overturn.cpu().numpy()
+        tgt_poss_flip = tgt_poss_flip.cpu().numpy()
         pred_pos_seq = outputs['pred_poss'].cpu().numpy()
-        pred_pos_overturn = outputs_overturn['pred_poss'].cpu().numpy()
+        pred_pos_flip = outputs_flip['pred_poss'].cpu().numpy()
         num_rollouts = tgt_pos_seq.shape[1]
 
         color = np.zeros([particle_type.shape[0], 3])
@@ -384,8 +391,8 @@ class PredEvaluator(object):
             fig = plt.figure(figsize=(12 * (bounds[0][1] - bounds[0][0]) / (bounds[1][1] - bounds[1][0]), 12), dpi=DPI)
             tgt_pos_now = tgt_pos_seq[:, i]
             pred_pos_now = pred_pos_seq[:, i]
-            tgt_pos_overturn_now = tgt_poss_overturn[:, i]
-            pred_pos_overturn_now = pred_pos_overturn[:, i]
+            tgt_pos_flip_now = tgt_poss_flip[:, i]
+            pred_pos_flip_now = pred_pos_flip[:, i]
             points1 = tgt_pos_now
             ax1 = fig.add_subplot(221)
             ax1.set_xlim(bounds[0][0], bounds[0][1])
@@ -404,40 +411,41 @@ class PredEvaluator(object):
             ax2.get_yaxis().set_visible(False)
             pts2 = ax2.scatter(points2[:, 0], points2[:, 1], c=color, s=s)
 
-            points3 = tgt_pos_overturn_now
+            points3 = tgt_pos_flip_now
             ax3 = fig.add_subplot(222)
             ax3.set_xlim(bounds[0][0], bounds[0][1])
             ax3.set_ylim(bounds[1][0], bounds[1][1])
-            ax3.set_title('overturn Ground truth')
+            ax3.set_title('flip Ground truth')
             ax3.get_xaxis().set_visible(False)
             ax3.get_yaxis().set_visible(False)
             pts3 = ax3.scatter(points3[:, 0], points3[:, 1], c=color, s=s)
 
-            points4 = pred_pos_overturn_now
+            points4 = pred_pos_flip_now
             ax4 = fig.add_subplot(224)
             ax4.set_xlim(bounds[0][0], bounds[0][1])
             ax4.set_ylim(bounds[1][0], bounds[1][1])
-            ax4.set_title('overturn Prediction')
+            ax4.set_title('flip Prediction')
             ax4.get_xaxis().set_visible(False)
             ax4.get_yaxis().set_visible(False)
             pts4 = ax4.scatter(points4[:, 0], points4[:, 1], c=color, s=s)
 
-            plt.savefig(os.path.join(self.output_dir, str(self.dataset) + "_overturn_" + str(batch_idx) + "_" + str(i) + ".png"))
+            plt.savefig(os.path.join(self.output_dir, str(self.dataset) + "_flip_" + str(batch_idx) + "_" + str(i) + ".png"))
 
             plt.close(fig)
             plt.close()
 
 
-    def overturn(self, poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts):
-        poss_overturn = copy.deepcopy(poss)
-        poss_overturn[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - poss_overturn[:,:,0]
-        vels_overturn = copy.deepcopy(vels)
-        vels_overturn[:,:,0] = -1 * vels_overturn[:,:,0]
-        tgt_poss_overturn = copy.deepcopy(tgt_poss)
-        tgt_poss_overturn[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - tgt_poss_overturn[:,:,0]
-        tgt_vels_overturn = copy.deepcopy(tgt_vels)
-        tgt_vels_overturn[:,:,0] = -1 * tgt_vels_overturn[:,:, 0]
-        return poss_overturn, vels_overturn, particle_type, nonk_mask, tgt_poss_overturn, tgt_vels_overturn
+    def flip(self, poss, vels, particle_type, nonk_mask, tgt_poss, tgt_vels, num_rollouts):
+        '''Overall system flip'''
+        poss_flip = copy.deepcopy(poss)
+        poss_flip[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - poss_flip[:,:,0]
+        vels_flip = copy.deepcopy(vels)
+        vels_flip[:,:,0] = -1 * vels_flip[:,:,0]
+        tgt_poss_flip = copy.deepcopy(tgt_poss)
+        tgt_poss_flip[:,:,0] = self.metadata['bounds'][0][0] + self.metadata['bounds'][0][1] - tgt_poss_flip[:,:,0]
+        tgt_vels_flip = copy.deepcopy(tgt_vels)
+        tgt_vels_flip[:,:,0] = -1 * tgt_vels_flip[:,:, 0]
+        return poss_flip, vels_flip, particle_type, nonk_mask, tgt_poss_flip, tgt_vels_flip
 
 
 
