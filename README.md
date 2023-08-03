@@ -48,27 +48,16 @@ python train.py --cfg {CONFIG_FILE} --exp-name {EXP_NAME} --dataset-name {DATASE
 Where:
 
 - `{CONFIG_FILE}` is one of：
-
   - `configs/slide.yaml`
   - `configs/slide_same_r.yaml`
   - `configs/slide_plus.yaml`
   - `configs/crash.yaml`
   - `configs/sand.yaml`
-
 - `{DATASET}` is one of:
-
   - `Slide`
-
   - `Slide_Same_R`
-
   - `Slide_Plus`
-
-  - ```
-    
-    ```
-
-    `Crash`
-
+  - `Crash`
   - `Sand`
 
 - `{EXP_NAME}` is customizable.
