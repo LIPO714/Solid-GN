@@ -1,6 +1,6 @@
-# S-SGN: A Symmetric Graph Network for Solid Dynamic
+# Learning Solid Dynamics with Graph Neural Network
 
-This is a code description of the S-SGN model.
+This is a code description of the Solid-GN model.
 
 ![](./img/framework.png "S-SGN's framework")
 
